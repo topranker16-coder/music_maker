@@ -10,11 +10,11 @@ st.set_page_config(
 
 st.title("🎤 가요 댄스/팝 리듬 곡선 작곡기")
 st.markdown(
-    "왼쪽 악기 영역(피아노, 기타, 베이스, 드럼)에 선을 **길~게** 그려보세요! **진짜"
-    " 가요처럼 생동감 넘치는 댄스 비트와 합주가 길게 연주**됩니다."
+    "왼쪽 악기 영역(피아노, 기타, 베이스, 드럼)에 선을 가볍게 그려보세요! **진짜"
+    " 가요처럼 생동감 넘치는 댄스 비트와 합주가 연주**됩니다."
 )
 
-# 1. 멀티 악기 트랙 캔버스 (가로폭을 늘려 길게 그릴 수 있게 확장)
+# 1. 캔버스 생성
 canvas_result = st_canvas(
     fill_color="rgba(255, 165, 0, 0.3)",
     stroke_width=5,
@@ -27,39 +27,33 @@ canvas_result = st_canvas(
 )
 
 st.caption(
-    "📍 **[0~80]:** 🎹 피아노 (메인 멜로디)  |  **[81~160]:** 🎸 일렉/어쿠스틱"
-    " 기타 (찰진 화음)  |  **[161~240]:** 🎸 묵직한 가요 베이스  |  **[241~320]:** 🥁"
-    " 리얼 댄스 드럼 비트"
+    "📍 **[0~80]:** 🎹 피아노 | **[81~160]:** 🎸 기타 | **[161~240]:** 🎸"
+    " 베이스 | **[241~320]:** 🥁 드럼 비트"
 )
 
 st.markdown("---")
 st.subheader("🎧 가요 음원 완성하기")
 
-if st.button("🔥 댄스 가요 스타일로 길게 연주 시작!"):
+# 2. 버튼 클릭 시 안전하게 실행되는 오디오 생성 로직
+if st.button("🔥 댄스 가요 스타일로 연주 시작!"):
+  # 데이터가 안전하게 존재하는지 체크하는 안전장치 추가
   if (
-      canvas_result.json_data is not None
+      canvas_result is not None
+      and canvas_result.json_data is not None
+      and "objects" in canvas_result.json_data
       and len(canvas_result.json_data["objects"]) > 0
   ):
     objects = canvas_result.json_data["objects"]
 
     sample_rate = 44100
-    bpm = 120  # 신나는 가요 댄스 템포 (120 BPM)
-    beat_duration = 60.0 / bpm  # 1박자당 0.5초
-    note_duration = beat_duration / 2  # 8비트 박자감 (0.25초)
+    bpm = 120
+    beat_duration = 60.0 / bpm
+    note_duration = beat_duration / 2
     total_samples_per_note = int(sample_rate * note_duration)
 
-    # 신나는 가요 스케일 (메이저/펜타토닉 믹스)
-    scale_piano = [
-        523.25,
-        587.33,
-        659.25,
-        783.99,
-        880.00,
-        1046.50,
-        1174.66,
-    ]  # C5~D6
-    scale_guitar = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]  # C4~C5
-    scale_bass = [65.41, 73.42, 82.41, 98.00, 110.00, 130.81]  # C2~C3
+    scale_piano = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]
+    scale_guitar = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]
+    scale_bass = [65.41, 73.42, 82.41, 98.00, 110.00]
 
     all_instrument_tracks = []
 
@@ -70,13 +64,11 @@ if st.button("🔥 댄스 가요 스타일로 길게 연주 시작!"):
           start_y = path_data[0][2] if len(path_data[0]) >= 3 else 150
           y_points = [point[2] for point in path_data if len(point) >= 3]
 
-          # 곡 길이를 길게 가져가기 위해 샘플링 수 확장 (최대 100마디/음표 = 약 25초 연주)
-          step = max(1, len(y_points) // 80)
+          step = max(1, len(y_points) // 50)
           sampled_y = y_points[::step]
-
           single_track = []
 
-          # 🎹 1. 피아노 구역 (0~80)
+          # 피아노 구역 (0~80)
           if start_y <= 80:
             for y in sampled_y:
               t = np.linspace(
@@ -85,15 +77,13 @@ if st.button("🔥 댄스 가요 스타일로 길게 연주 시작!"):
               norm_y = max(0, min(80, 80 - y))
               idx = int((norm_y / 80) * (len(scale_piano) - 1))
               freq = scale_piano[idx]
-              # 풍성한 피아노 어택 + 리버브 잔향
               wave = (
                   0.3 * np.sin(2 * np.pi * freq * t)
                   + 0.15 * np.sin(2 * np.pi * freq * 2 * t)
-                  + 0.05 * np.sin(2 * np.pi * freq * 3 * t)
               ) * np.exp(-3 * t / note_duration)
               single_track.append(wave)
 
-          # 🎸 2. 기타 구역 (81~160)
+          # 기타 구역 (81~160)
           elif start_y <= 160:
             for y in sampled_y:
               t = np.linspace(
@@ -102,7 +92,6 @@ if st.button("🔥 댄스 가요 스타일로 길게 연주 시작!"):
               norm_y = max(0, min(80, 160 - y))
               idx = int((norm_y / 80) * (len(scale_guitar) - 1))
               freq = scale_guitar[idx]
-              # 찰진 기타 리듬 커팅 (톱니파 + 삼각파 변형)
               wave = (
                   0.25
                   * np.arcsin(np.sin(2 * np.pi * freq * t))
@@ -110,16 +99,15 @@ if st.button("🔥 댄스 가요 스타일로 길게 연주 시작!"):
               )
               single_track.append(wave)
 
-          # 🎸 3. 묵직한 베이스 구역 (161~240)
+          # 베이스 구역 (161~240)
           elif start_y <= 240:
-            for i, y in enumerate(sampled_y):
+            for y in sampled_y:
               t = np.linspace(
                   0, note_duration, total_samples_per_note, endpoint=False
               )
               norm_y = max(0, min(80, 240 - y))
               idx = int((norm_y / 80) * (len(scale_bass) - 1))
               freq = scale_bass[idx]
-              # 둥둥거리는 일렉트릭 슬랩 베이스 톤
               wave = (
                   0.4
                   * (
@@ -130,12 +118,73 @@ if st.button("🔥 댄스 가요 스타일로 길게 연주 시작!"):
               )
               single_track.append(wave)
 
-          # 🥁 4. 리얼 댄스 드럼 구역 (241~320)
+          # 드럼 구역 (241~320)
           else:
             for i, y in enumerate(sampled_y):
               t = np.linspace(
                   0, note_duration, total_samples_per_note, endpoint=False
               )
               beat_type = i % 4
+              if beat_type == 0:
+                kick = np.sin(
+                    2
+                    * np.pi
+                    * np.linspace(160, 40, total_samples_per_note)
+                    * t
+                ) * np.exp(-8 * t)
+                drum_sound = 0.7 * kick
+              elif beat_type == 1 or beat_type == 3:
+                hihat = (
+                    np.random.uniform(-0.3, 0.3, total_samples_per_note)
+                    * np.exp(-20 * t)
+                )
+                drum_sound = hihat
+              else:
+                snare_tone = np.sin(2 * np.pi * 180 * t) * np.exp(-12 * t)
+                snare_noise = (
+                    np.random.uniform(-0.4, 0.4, total_samples_per_note)
+                    * np.exp(-10 * t)
+                )
+                drum_sound = 0.5 * snare_tone + 0.5 * snare_noise
+              single_track.append(drum_sound)
 
-              #
+          if len(single_track) > 0:
+            all_instrument_tracks.append(np.concatenate(single_track))
+
+    if len(all_instrument_tracks) > 0:
+      max_len = max(len(t) for t in all_instrument_tracks)
+      padded_tracks = [
+          np.pad(t, (0, max_len - len(t)), "constant")
+          for t in all_instrument_tracks
+      ]
+      final_mix = np.sum(padded_tracks, axis=0)
+
+      max_val = np.max(np.abs(final_mix))
+      if max_val > 0:
+        final_mix = final_mix / max_val * 0.9
+
+      audio_data = (final_mix * 32767).astype(np.int16)
+
+      wav_io = io.BytesIO()
+      wavfile.write(wav_io, sample_rate, audio_data)
+      wav_bytes = wav_io.getvalue()
+
+      st.audio(wav_bytes, format="audio/wav")
+      st.download_button(
+          label="💾 가요 스타일 풀-트랙 음원 다운로드 (.wav)",
+          data=wav_bytes,
+          file_name="kpop_style_full_track.wav",
+          mime="audio/wav",
+      )
+      st.success("🎉 멋진 가요 댄스 비트 음원이 완성되었습니다!")
+    else:
+      st.warning(
+          "⚠️ 선이 올바르게 인식되지 않았습니다. 캔버스를 지우고 선을 다시"
+          " 그려주세요!"
+      )
+  else:
+    # 만약 선이 없거나 데이터가 비어있으면 친절하게 경고를 띄워줌 (먹통 방지)
+    st.warning(
+        "⚠️ 캔버스에 선이 그려지지 않았거나 데이터가 없습니다. 선을 먼저"
+        " 그려주세요!"
+    )
