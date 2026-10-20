@@ -5,40 +5,56 @@ import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
 st.set_page_config(
-    page_title="오선지 콩나물 자동 반주 작곡기 🎵", layout="centered"
+    page_title="진짜 오선지 콩나물 작곡기 🎵", layout="centered"
 )
 
-st.title("🎼 오선지 콩나물 음표 작곡기")
+st.title("🎼 진짜 오선지 콩나물 음표 작곡기")
 st.markdown(
-    "오선지 위에 원하는 멜로디 높낮이대로 **점(콩나물 음표)**을 찍거나"
-    " **짧은 선**을 그어보세요!\n내가 찍은 **정확한 음표 멜로디**에 맞춰 AI가"
-    " 풍성한 반주를 완성합니다."
+    "아래 오선지 가이드라인을 보면서 원하는 위치에 **콩나물 점(음표)**을 찍어보세요!"
 )
 
-# 1. 오선지 배경 가이드라인이 그려진 캔버스 (높이 250px)
-# 오선지 줄 위치 (Y 좌표): 50, 80, 110, 140, 170
+# 오선지와 음계 가이드가 함께 그려진 HTML/캔버스 인터페이스
+sheet_music_html = """
+<div style="background-color: white; padding: 15px; border-radius: 10px; border: 2px solid #ddd; text-align: center;">
+    <div style="margin-bottom: 5px; font-weight: bold; color: #555; font-size: 14px;">
+        🎵 [오선지 가이드] 위쪽: 고음(도~솔) / 중간: 중음(파~미) / 아래쪽: 저음(레~도)
+    </div>
+</div>
+"""
+st.markdown(sheet_music_html, unsafe_allow_html=True)
+
+# 1. 시각적 오선지 선들이 배경에 깔린 드로잉 캔버스
 canvas_result = st_canvas(
-    fill_color="rgba(255, 75, 75, 0.8)",  # 음표 점 색상 (빨간 포인트)
+    fill_color="rgba(255, 75, 75, 0.9)",  # 찍히는 음표 점 색상 (빨간색 콩나물)
     stroke_width=6,
-    stroke_color="#1E88E5",  # 선 색상 (파란색)
+    stroke_color="#1E88E5",
     background_color="#FFFFFF",
-    height=250,
+    background_image=None,
+    height=280,
     width=680,
     drawing_mode="freedraw",
-    key="canvas_sheet_music",
+    key="canvas_real_sheet",
 )
 
-st.caption(
-    "🎼 **오선지 음높이 가이드 (위에서부터 아래로):**\n"
-    "• 맨 위 (Y: ~40): 높은 도~레  |  • 1번줄 근처 (Y: 50~70): 시~라  |  • 중간"
-    " (Y: 80~120): 솔~파~미\n"
-    "• 아래쪽 (Y: 130~160): 레~도  |  • 맨 아래 (Y: 170~): 낮은 시~라"
+# 캔버스 밑에 오선지 줄 위치 가이드 표시
+st.markdown(
+    """
+    <div style="background: #f0f2f6; padding: 10px; border-radius: 8px; font-size: 13px; color: #333;">
+        <b>🎼 오선지 줄 위치 참고:</b><br>
+        • <b>1번선 (맨 위 줄):</b> 높은 미 / 파<br>
+        • <b>2번선:</b> 레 / 도<br>
+        • <b>3번선 (가운데 줄):</b> 시 / 라<br>
+        • <b>4번선:</b> 솔 / 파<br>
+        • <b>5번선 (맨 아래 줄):</b> 미 / 레 / 도
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.markdown("---")
-st.subheader("🎧 오선지 멜로디 & 자동 반주 연주하기")
+st.subheader("🎧 오선지 콩나물 연주 및 자동 반주 생성")
 
-if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
+if st.button("🎵 오선지 음표대로 완곡 연주 시작!"):
   if (
       canvas_result is not None
       and canvas_result.json_data is not None
@@ -50,26 +66,26 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
     sample_rate = 44100
     bpm = 120
     beat_duration = 60.0 / bpm
-    note_duration = beat_duration / 2  # 8비트 박자 (0.25초)
+    note_duration = beat_duration / 2
     total_samples_per_note = int(sample_rate * note_duration)
 
-    # C 메이저 정음계 (오선지 줄/칸 위치에 대응하는 정확한 Hz)
-    # 높은 도(523.25)부터 낮은 도(261.63)까지 정확히 배치
+    # C 메이저 스케일 (정확한 Hz 매핑)
     note_scale = [
-        523.25,  # 높은 도 (0~30)
-        493.88,  # 시     (31~50)
-        440.00,  # 라     (51~70)
-        392.00,  # 솔     (71~90)
-        349.23,  # 파     (91~110)
-        329.63,  # 미     (111~130)
-        293.66,  # 레     (131~150)
-        261.63,  # 도     (151~170)
-        220.00,  # 낮은 라 (171~)
+        659.25,  # 높은 미 (E5)
+        587.33,  # 높은 레 (D5)
+        523.25,  # 높은 도 (C5)
+        493.88,  # 시 (B4)
+        440.00,  # 라 (A4)
+        392.00,  # 솔 (G4)
+        349.23,  # 파 (F4)
+        329.63,  # 미 (E4)
+        293.66,  # 레 (D4)
+        261.63,  # 도 (C4)
+        220.00,  # 낮은 라 (A3)
     ]
 
     bass_scale = [130.81, 146.83, 164.81, 174.61, 196.00, 220.00]
 
-    # 그려진 점/선들의 X좌표(시간순)에 따라 정렬하여 멜로디 구성
     collected_notes = []
     for obj in objects:
       if "path" in obj and len(obj["path"]) > 0:
@@ -78,11 +94,8 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
             collected_notes.append((pt[1], pt[2]))  # (X좌표, Y좌표)
 
     if len(collected_notes) > 0:
-      # X축(시간) 순서대로 음표 정렬
       collected_notes.sort(key=lambda item: item[0])
-
-      # 박자 간격에 맞춰 음표 샘플링 (최대 50개 콩나물)
-      step = max(1, len(collected_notes) // 50)
+      step = max(1, len(collected_notes) // 40)
       sampled_notes = collected_notes[::step]
 
       melody_track = []
@@ -95,19 +108,18 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
             0, note_duration, total_samples_per_note, endpoint=False
         )
 
-        # Y좌표를 정확한 오선지 음계 index로 변환
-        norm_y = max(0, min(200, y_pos))
-        scale_idx = int((norm_y / 200) * (len(note_scale) - 1))
+        norm_y = max(0, min(280, y_pos))
+        scale_idx = int((norm_y / 280) * (len(note_scale) - 1))
         exact_freq = note_scale[scale_idx]
 
-        # 1. 메인 피아노 멜로디 (정확한 음 표현)
+        # 1. 피아노 메인 멜로디
         melody_wave = (
             0.4 * np.sin(2 * np.pi * exact_freq * t)
             + 0.15 * np.sin(2 * np.pi * exact_freq * 2 * t)
         ) * np.exp(-3 * t / note_duration)
         melody_track.append(melody_wave)
 
-        # 2. 3도 화음 반주
+        # 2. 화음 반주
         harm_freq = exact_freq * 1.25
         harmony_wave = (
             0.18
@@ -116,7 +128,7 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
         )
         harmony_track.append(harmony_wave)
 
-        # 3. 묵직한 베이스 반주
+        # 3. 베이스
         bass_freq = bass_scale[scale_idx % len(bass_scale)]
         bass_wave = (
             0.35
@@ -128,7 +140,7 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
         )
         bass_track.append(bass_wave)
 
-        # 4. 신나는 댄스 드럼 비트
+        # 4. 댄스 드럼
         beat_type = i % 4
         if beat_type == 0:
           kick = np.sin(
@@ -151,7 +163,6 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
 
         drum_track.append(drum_wave)
 
-      # 믹싱 처리
       full_melody = np.concatenate(melody_track)
       full_harmony = np.concatenate(harmony_track)
       full_bass = np.concatenate(bass_track)
@@ -177,12 +188,9 @@ if st.button("🎵 내가 찍은 콩나물 음표로 완곡 연주!"):
           mime="audio/wav",
       )
       st.success(
-          "🎼 오선지에 찍은 음표대로 정확하게 멜로디가 연주되며 풍성한 반주가"
-          " 완성되었습니다!"
+          "🎼 오선지에 찍힌 콩나물 음표 위치에 맞춰 완벽한 하모니가 연주되었습니다!"
       )
     else:
-      st.warning(
-          "⚠️ 음표가 인식되지 않았습니다. 캔버스 위에 점이나 선을 찍어주세요!"
-      )
+      st.warning("⚠️ 음표가 없습니다. 오선지 위에 콩나물 점을 찍어주세요!")
   else:
-    st.warning("⚠️ 먼저 오선지 위 원하는 음높이 위치에 음표 점을 찍어보세요!")
+    st.warning("⚠️ 먼저 오선지 위에 음표를 찍어보세요!")
