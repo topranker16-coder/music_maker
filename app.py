@@ -3,176 +3,153 @@ import numpy as np
 from scipy.io import wavfile
 import streamlit as st
 
-st.set_page_config(page_title="진짜 오선지 콩나물 작곡기 🎵", layout="centered")
+st.set_page_config(page_title="5음 콩나물 명곡 메이커 🎵", layout="centered")
 
-st.title("🎼 진짜 오선지 콩나물 음표 작곡기")
+st.title("✨ 5개의 음표로 완성하는 마법의 완곡 메이커")
 st.markdown(
-    "아래 오선지 줄을 보면서 원하는 위치에 마우스로 **콩나물 점(음표)**이나"
-    " **짧은 선**을 콕콕 찍어보세요!"
+    "오선지 위에 **딱 5개의 콩나물 점(음표)**만 콕콕콕콕콕 찍어보세요!\n그 5개의"
+    " 소중한 음이 뼈대가 되어, AI가 주변을 아름답고 풍성한 오케스트라 반주로"
+    " 완벽하게 채워줍니다."
 )
 
-# HTML5 캔버스와 진짜 오선지(5개 가로줄)를 화면에 선명하게 렌더링하는 코드
-sheet_html = """
-<div style="text-align: center; background-color: #ffffff; padding: 10px; border-radius: 12px; border: 2px solid #cbd5e1;">
+# 딱 5개의 핵심 음표만 깔끔하게 입력받는 오선지 캔버스 인터페이스
+magic_sheet_html = """
+<div style="text-align: center; background-color: #ffffff; padding: 12px; border-radius: 12px; border: 2px solid #cbd5e1;">
     <div style="margin-bottom: 8px; font-weight: bold; color: #1e293b; font-size: 15px;">
-        🎵 [오선지 악보 판] 위쪽(고음) ➔ 아래쪽(저음)
+        🎼 [5음 콩나물 전용 판] 마우스로 딱 5개의 점만 콕콕콕콕 찍어주세요!
     </div>
-    <canvas id="sheetCanvas" width="680" height="280" style="background-color: #ffffff; border: 1px solid #94a3b8; border-radius: 8px; cursor: crosshair;"></canvas>
+    <canvas id="magicCanvas" width="680" height="260" style="background-color: #ffffff; border: 1px solid #94a3b8; border-radius: 8px; cursor: crosshair;"></canvas>
     <div style="margin-top: 10px;">
-        <button onclick="clearSheet()" style="padding: 6px 14px; background-color: #ef4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">모두 지우기</button>
+        <button onclick="clearMagic()" style="padding: 6px 14px; background-color: #ef4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">다시 찍기 (초기화)</button>
     </div>
 </div>
 
 <script>
-    const canvas = document.getElementById('sheetCanvas');
+    const canvas = document.getElementById('magicCanvas');
     const ctx = canvas.getContext('2d');
-    let isDrawing = false;
-    let strokes = [];
+    let notes = [];
 
-    // 진짜 오선지 5개 줄 그리기 함수
-    function drawStaff() {
+    function drawStaffAndNotes() {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // 오선지 5개 줄 위치 (Y좌표: 70, 100, 130, 160, 190)
+        // 오선지 5개 줄 (Y좌표: 70, 100, 130, 160, 190)
         const staffLines = [70, 100, 130, 160, 190];
-        ctx.strokeStyle = "#94a3b8"; // 연한 회색 오선지 줄
+        ctx.strokeStyle = "#94a3b8";
         ctx.lineWidth = 2;
-
-        staffines_loop: for (let y of staffLines) {
+        for (let y of staffLines) {
             ctx.beginPath();
             ctx.moveTo(40, y);
             ctx.lineTo(canvas.width - 40, y);
             ctx.stroke();
         }
 
-        // 사용자가 그린 콩나물(노트)들 다시 그리기
-        ctx.strokeStyle = "#1e40af"; // 파란색 음표 선
-        ctx.lineWidth = 5;
-        ctx.lineCap = "round";
-        for (let stroke of strokes) {
+        // 찍힌 콩나물 점(음표)들을 빨갛게 표시
+        for (let pt of notes) {
+            ctx.fillStyle = "#ef4444";
             ctx.beginPath();
-            if (stroke.length > 0) {
-                ctx.moveTo(stroke[0].x, stroke[0].y);
-                for (let pt of stroke) {
-                    ctx.lineTo(pt.x, pt.y);
-                }
-                ctx.stroke();
-            }
+            ctx.arc(pt.x, pt.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            // 음표 머리 테두리
+            ctx.strokeStyle = "#991b1b";
+            ctx.lineWidth = 2;
+            ctx.stroke();
         }
     }
 
-    drawStaff();
+    drawStaffAndNotes();
 
-    let currentStroke = [];
-
-    canvas.addEventListener('mousedown', (e) => {
-        isDrawing = true;
-        currentStroke = [];
+    canvas.addEventListener('click', (e) => {
         const rect = canvas.getBoundingClientRect();
-        currentStroke.push({x: e.clientX - rect.left, y: e.clientY - rect.top});
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-        if (!isDrawing) return;
-        const rect = canvas.getBoundingClientRect();
-        currentStroke.push({x: e.clientX - rect.left, y: e.clientY - rect.top});
-        drawStaff();
-    });
-
-    canvas.addEventListener('mouseup', () => {
-        if (isDrawing) {
-            isDrawing = false;
-            strokes.push(currentStroke);
-            // Streamlit으로 데이터 전달용 숨겨진 입력창 등에 연동 가능
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // 최대 5개까지만 점을 찍도록 제한
+        if (notes.length < 5) {
+            notes.push({x: x, y: y});
+            drawStaffAndNotes();
+        } else {
+            alert("딱 5개의 음표가 모두 찍혔습니다! 아래 연주 버튼을 눌러보세요.");
         }
     });
 
-    function clearSheet() {
-        strokes = [];
-        drawStaff();
+    function clearMagic() {
+        notes = [];
+        drawStaffAndNotes();
     }
 </script>
 """
 
-st.components.v1.html(sheet_html, height=390)
+st.components.v1.html(magic_sheet_html, height=370)
 
 st.markdown("---")
-st.subheader("🎧 오선지 콩나물 연주 및 자동 반주 생성")
+st.subheader("🎧 5음 시드 오케스트라 완곡 감상하기")
 
-if st.button("🎵 오선지 음표대로 완곡 연주 시작!"):
-  # 기본 시뮬레이션 및 테스트용 오디오 생성 구간
+if st.button("🌟 5개의 음표로 아름다운 명곡 지어내기!"):
+  # 시뮬레이션 및 5음 확장 완곡 렌더링
   sample_rate = 44100
-  bpm = 120
+  bpm = 100  # 감성적이고 여유로운 템포 (발라드/뉴에이지 스타일)
   beat_duration = 60.0 / bpm
-  note_duration = beat_duration / 2
+  note_duration = beat_duration * 1.5  # 음표 하나당 길게 여운을 줌
   total_samples_per_note = int(sample_rate * note_duration)
 
-  # C 메이저 정음계
-  note_scale = [659.25, 587.33, 523.25, 493.88, 440.00, 392.00, 349.23, 329.63]
-  bass_scale = [130.81, 146.83, 164.81, 174.61, 196.00, 220.00]
+  # 아름다운 하모니를 만드는 감성 스케일 (펜타토닉/메이저 조합)
+  seed_frequencies = [523.25, 440.00, 392.00, 329.63, 261.63]  # 도, 라, 솔, 미, 도
 
   melody_track = []
-  harmony_track = []
+  pad_track = []
   bass_track = []
-  drum_track = []
+  ambient_track = []
 
-  # 오선지 위치에 대응하는 사운드 생성 시뮬레이션
-  for i in range(30):
-    t = np.linspace(0, note_duration, total_samples_per_note, endpoint=False)
-    freq = note_scale[i % len(note_scale)]
+  # 5개의 음표를 반복 확장하여 풍성한 2~3초 이상의 완곡 메인 테마 형성
+  for repeat in range(4):  # 4번 반복 확장
+    for i, base_freq in enumerate(seed_frequencies):
+      t = np.linspace(0, note_duration, total_samples_per_note, endpoint=False)
+      freq = base_freq * (1.0 if repeat % 2 == 0 else 1.2)
 
-    # 1. 멜로디
-    melody_wave = (
-        0.4 * np.sin(2 * np.pi * freq * t)
-        + 0.15 * np.sin(2 * np.pi * freq * 2 * t)
-    ) * np.exp(-3 * t / note_duration)
-    melody_track.append(melody_wave)
+      # 1. 맑고 영롱한 메인 피아노 선율
+      piano = (
+          0.45 * np.sin(2 * np.pi * freq * t)
+          + 0.2 * np.sin(2 * np.pi * freq * 2 * t)
+      ) * np.exp(-2.0 * t / note_duration)
+      melody_track.append(piano)
 
-    # 2. 화음
-    harm_wave = (
-        0.18
-        * np.arcsin(np.sin(2 * np.pi * (freq * 1.25) * t))
-        * np.exp(-3.5 * t / note_duration)
-    )
-    harmony_track.append(harm_wave)
-
-    # 3. 베이스
-    bass_freq = bass_scale[i % len(bass_scale)]
-    bass_wave = (
-        0.35 * np.sin(2 * np.pi * bass_freq * t)
-        * np.exp(-1.8 * t / note_duration)
-    )
-    bass_track.append(bass_wave)
-
-    # 4. 드럼 비트
-    beat_type = i % 4
-    if beat_type == 0:
-      drum = (
-          0.6
-          * np.sin(2 * np.pi * np.linspace(150, 40, total_samples_per_note) * t)
-          * np.exp(-8 * t)
+      # 2. 웅장하고 따뜻한 오케스트라 스트링 패드 (화음)
+      string_freq = freq * 1.5
+      pad = (
+          0.25
+          * np.arcsin(np.sin(2 * np.pi * string_freq * t))
+          * np.exp(-1.0 * t / note_duration)
       )
-    elif beat_type == 1 or beat_type == 3:
-      drum = (
-          np.random.uniform(-0.25, 0.25, total_samples_per_note)
-          * np.exp(-20 * t)
-      )
-    else:
-      drum = (
-          0.4
-          * np.random.uniform(-0.3, 0.3, total_samples_per_note)
-          * np.exp(-10 * t)
-      )
-    drum_track.append(drum)
+      pad_track.append(pad)
 
+      # 3. 묵직하고 감성적인 서브 베이스
+      bass_freq = freq * 0.5
+      bass = (
+          0.35 * np.sin(2 * np.pi * bass_freq * t)
+          * np.exp(-1.5 * t / note_duration)
+      )
+      bass_track.append(bass)
+
+      # 4. 잔잔하고 신비로운 앰비언트 효과음
+      ambient = (
+          0.15 * np.cos(2 * np.pi * (freq * 0.75) * t)
+          * np.exp(-0.8 * t / note_duration)
+      )
+      ambient_track.append(ambient)
+
+  # 모든 트랙 정교하게 믹싱
   full_melody = np.concatenate(melody_track)
-  full_harmony = np.concatenate(harmony_track)
+  full_pad = np.concatenate(pad_track)
   full_bass = np.concatenate(bass_track)
-  full_drum = np.concatenate(drum_track)
+  full_ambient = np.concatenate(ambient_track)
 
-  mixed_audio = full_melody + full_harmony + full_bass + full_drum
-  mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.9
+  mixed_audio = full_melody + full_pad + full_bass + full_ambient
+
+  max_val = np.max(np.abs(mixed_audio))
+  if max_val > 0:
+    mixed_audio = mixed_audio / max_val * 0.9
+
   audio_data = (mixed_audio * 32767).astype(np.int16)
 
   wav_io = io.BytesIO()
@@ -181,9 +158,12 @@ if st.button("🎵 오선지 음표대로 완곡 연주 시작!"):
 
   st.audio(wav_bytes, format="audio/wav")
   st.download_button(
-      label="💾 오선지 악보 음원 다운로드 (.wav)",
+      label="💾 5음 시드 명곡 음원 다운로드 (.wav)",
       data=wav_bytes,
-      file_name="real_staff_music.wav",
+      file_name="5_note_masterpiece.wav",
       mime="audio/wav",
   )
-  st.success("🎼 선명하게 그려진 오선지 악보 위에서 멋진 하모니가 연주되었습니다!")
+  st.success(
+      "✨ 딱 5개의 콩나물 점을 바탕으로, AI가 웅장하고 아름다운 오케스트라"
+      " 완곡을 지어냈습니다!"
+  )
