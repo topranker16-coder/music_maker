@@ -53,7 +53,7 @@ if st.button("🚀 풀-밴드 사운드로 변환하기!"):
       ]
 
       # 베이스 스케일 (낮은 음역대)
-      bass_scale = [65.41, 73.42, 82.41, 98.00, 110.00]  # C2 ~ A2 (낮은 음)
+      bass_scale = [65.41, 73.42, 82.41, 98.00, 110.00]
 
       sample_rate = 44100
       note_duration = 0.15
@@ -66,28 +66,25 @@ if st.button("🚀 풀-밴드 사운드로 변환하기!"):
       bass_track = []
       drum_track = []
 
-      # 2. 사운드 트랙 생성 연산
       for i, y in enumerate(sampled_y):
         t = np.linspace(
             0, note_duration, total_samples_per_note, endpoint=False
         )
 
-        # (1) 메인 멜로디 (선 Y값 기반)
+        # (1) 메인 멜로디
         normalized_y = max(0, min(250, 250 - y))
         scale_index = int((normalized_y / 250) * (len(scale) - 1))
         freq = scale[scale_index]
 
-        # 멜로디에 풍성한 화음(3도 위 음) 살짝 얹기
-        harmony_freq = freq * 1.25  # 3도 화음
+        harmony_freq = freq * 1.25
         melody_wave = (
             0.3 * np.sin(2 * np.pi * freq * t)
             + 0.15 * np.sin(2 * np.pi * harmony_freq * t)
         ) * np.exp(-3 * t / note_duration)
         melody_track.append(melody_wave)
 
-        # (2) 묵직한 베이스 라인 (박자 맞춰 낮은 음 발사)
+        # (2) 묵직한 베이스 라인
         bass_freq = bass_scale[i % len(bass_scale)]
-        # 베이스는 톱니파(Sawtooth) 형태 흉내로 묵직한 질감 표현
         bass_wave = (
             0.4
             * (
@@ -98,25 +95,47 @@ if st.button("🚀 풀-밴드 사운드로 변환하기!"):
         )
         bass_track.append(bass_wave)
 
-        # (3) 드럼 비트 (쿵-딱 리듬)
+        # (3) 드럼 비트
         beat_type = i % 4
         drum_note = np.zeros(total_samples_per_note)
 
-        if beat_type == 0 or beat_type == 2:  # 킥 (쿵)
+        if beat_type == 0 or beat_type == 2:
           kick_freq = np.linspace(130, 35, total_samples_per_note)
           drum_note = 0.6 * np.sin(2 * np.pi * kick_freq * t) * np.exp(-10 * t)
-        elif beat_type == 1 or beat_type == 3:  # 스네어/하이햇 (딱)
+        elif beat_type == 1 or beat_type == 3:
           noise = np.random.uniform(-0.35, 0.35, total_samples_per_note)
           drum_note = noise * np.exp(-14 * t)
 
         drum_track.append(drum_note)
 
-      # 3. 모든 악기 트랙 믹싱 (Melody + Bass + Drum)
+      # 믹싱 처리
       full_melody = np.concatenate(melody_track)
       full_bass = np.concatenate(bass_track)
       full_drum = np.concatenate(drum_track)
 
       mixed_audio = full_melody + full_bass + full_drum
 
-      # 볼륨 다듬기
-      max_
+      max_val = np.max(np.abs(mixed_audio))
+      if max_val > 0:
+        mixed_audio = mixed_audio / max_val * 0.85
+
+      audio_data = (mixed_audio * 32767).astype(np.int16)
+
+      wav_io = io.BytesIO()
+      wavfile.write(wav_io, sample_rate, audio_data)
+      wav_bytes = wav_io.getvalue()
+
+      st.audio(wav_bytes, format="audio/wav")
+      st.download_button(
+          label="💾 풀-밴드 완곡 다운로드 (.wav)",
+          data=wav_bytes,
+          file_name="full_band_drawn_music.wav",
+          mime="audio/wav",
+      )
+      st.success(
+          "🎸 멜로디, 화음, 묵직한 베이스, 드럼까지 완성된 풀-밴드 사운드입니다!"
+      )
+    else:
+      st.warning("⚠️ 캔버스에 선을 조금 더 길게 그려보세요!")
+  else:
+    st.warning("⚠️ 먼저 파란 캔버스에 선을 그려주세요!")
