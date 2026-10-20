@@ -5,7 +5,7 @@ from scipy.io import wavfile
 import streamlit as st
 
 st.set_page_config(
-    page_title="🎹 AI 멀티 악기 자동 편곡 스튜디오",
+    page_title="🎹 AI 멀티 악기 자동 합주 & 편곡 스튜디오",
     page_icon="🎼",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -49,13 +49,6 @@ st.markdown("""
         padding: 20px;
         margin-bottom: 20px;
     }
-    .track-card {
-        background: #1e293b;
-        border-left: 5px solid #6366f1;
-        padding: 16px;
-        border-radius: 12px;
-        margin-bottom: 12px;
-    }
     div.stButton > button {
         border-radius: 10px !important;
         font-weight: bold !important;
@@ -71,6 +64,12 @@ NOTE_FREQS = {
     "C6": 1046.50
 }
 
+# --- 정갈한 12음계 순서 ---
+SCALE_NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+def get_transposed_freq(base_freq, semitones):
+    return base_freq * (2 ** (semitones / 12.0))
+
 # --- 샘플 멜로디 템플릿 ---
 SAMPLE_MELODIES = {
     "✨ K-POP 댄스 훅 (신나는 멜로디)": [
@@ -81,7 +80,7 @@ SAMPLE_MELODIES = {
         ("C4", 1.0), ("E4", 1.0), ("G4", 1.0), ("B4", 1.0), ("A4", 1.0), ("G4", 0.5), ("F4", 0.5), ("E4", 2.0),
         ("F4", 1.0), ("E4", 1.0), ("D4", 1.0), ("C4", 2.0)
     ],
-    "🎻 캐논 변주곡풍 (클래식)": [
+    "🎻 캐논 변주곡풍 (클래식 앙상블)": [
         ("E5", 1.0), ("D5", 1.0), ("C5", 1.0), ("B4", 1.0), ("A4", 1.0), ("G4", 1.0), ("A4", 1.0), ("B4", 1.0),
         ("C5", 1.0), ("B4", 1.0), ("A4", 1.0), ("G4", 1.0), ("F4", 1.0), ("E4", 1.0), ("F4", 1.0), ("G4", 1.0)
     ],
@@ -92,31 +91,28 @@ SAMPLE_MELODIES = {
 }
 
 # --- 음원 합성 함수 (고품질 악기별 ADSR & 배음) ---
-def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
-    num_samples = int(sample_rate * duration)
-    if num_samples <= 0:
-        return np.array([])
-    t = np.linspace(0, duration, num_samples, endpoint=False)
-    if freq <= 0:
-        return np.zeros_like(t)
+def synthesize_instrument(freq, duration, sample_rate, inst_type="🎹 그랜드 피아노"):
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    if freq <= 0 or len(t) == 0:
+        return np.zeros(max(1, int(sample_rate * duration)))
     
-    if inst_type == "🎹 그랜드 피아노":
+    if "피아노" in inst_type:
         sound = (0.55 * np.sin(2 * np.pi * freq * t) +
                  0.25 * np.sin(2 * np.pi * freq * 2 * t) +
                  0.12 * np.sin(2 * np.pi * freq * 3 * t) +
                  0.08 * np.sin(2 * np.pi * freq * 4 * t))
-        envelope = np.exp(-3.2 * t / max(duration, 1e-5))
+        envelope = np.exp(-3.2 * t / max(0.01, duration))
         return sound * envelope
 
-    elif inst_type == "🎸 어쿠스틱 기타":
+    elif "기타" in inst_type:
         sound = (0.5 * np.sin(2 * np.pi * freq * t) +
                  0.3 * np.sin(2 * np.pi * freq * 2 * t) +
                  0.15 * np.sin(2 * np.pi * freq * 3 * t))
-        envelope = np.exp(-4.5 * t / max(duration, 1e-5))
-        pluck = np.random.uniform(-0.15, 0.15, len(t)) * np.exp(-35.0 * t / max(duration, 1e-5))
+        envelope = np.exp(-4.5 * t / max(0.01, duration))
+        pluck = np.random.uniform(-0.15, 0.15, len(t)) * np.exp(-35.0 * t / max(0.01, duration))
         return (sound + pluck) * envelope
 
-    elif inst_type == "🎻 바이올린 / 현악기":
+    elif "바이올린" in inst_type or "현악기" in inst_type or "첼로" in inst_type:
         vibrato = 1.0 + 0.006 * np.sin(2 * np.pi * 5.5 * t)
         sound = (0.5 * np.sin(2 * np.pi * freq * vibrato * t) +
                  0.3 * np.sin(2 * np.pi * freq * 2 * vibrato * t) +
@@ -125,17 +121,17 @@ def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
         attack = np.ones_like(t)
         if attack_len > 0:
             attack[:attack_len] = np.linspace(0, 1, attack_len)
-        release = np.exp(-1.2 * t / max(duration, 1e-5))
+        release = np.exp(-1.2 * t / max(0.01, duration))
         return sound * attack * release
 
-    elif inst_type == "🩵 80s 레트로 신디사이저":
+    elif "신디사이저" in inst_type or "신스" in inst_type:
         sound = np.zeros_like(t)
         for k in range(1, 7):
             sound += (0.35 / k) * np.sin(2 * np.pi * freq * k * t)
-        envelope = np.exp(-2.0 * t / max(duration, 1e-5))
+        envelope = np.exp(-2.0 * t / max(0.01, duration))
         return sound * envelope
 
-    elif inst_type == "🎷 감성 플루트 / 목관":
+    elif "플루트" in inst_type or "관악기" in inst_type:
         vibrato = 1.0 + 0.005 * np.sin(2 * np.pi * 5.0 * t)
         sound = np.sin(2 * np.pi * freq * vibrato * t) + 0.12 * np.sin(2 * np.pi * freq * 2 * t)
         breath = 0.03 * np.random.uniform(-1, 1, len(t))
@@ -143,75 +139,110 @@ def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
         attack = np.ones_like(t)
         if attack_len > 0:
             attack[:attack_len] = np.linspace(0, 1, attack_len)
-        release = np.exp(-1.8 * t / max(duration, 1e-5))
+        release = np.exp(-1.8 * t / max(0.01, duration))
         return (sound + breath) * attack * release
 
     else: # 기본 피아노
-        return np.sin(2 * np.pi * freq * t) * np.exp(-3.0 * t / max(duration, 1e-5))
+        return np.sin(2 * np.pi * freq * t) * np.exp(-3.0 * t / max(0.01, duration))
 
-# --- 드럼 합성 엔진 (킥, 스네어, 하이햇, 림샷) ---
+# --- 드럼 합성 엔진 ---
 def synthesize_drum(drum_type, duration, sample_rate):
-    num_samples = int(sample_rate * duration)
-    if num_samples <= 0:
-        return np.array([])
-    t = np.linspace(0, duration, num_samples, endpoint=False)
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    if len(t) == 0:
+        return np.zeros(1)
     if drum_type == "kick":
         freq_sweep = np.linspace(130, 35, len(t))
-        sound = 0.8 * np.sin(2 * np.pi * freq_sweep * t) * np.exp(-14 * t / max(duration, 1e-5))
+        sound = 0.8 * np.sin(2 * np.pi * freq_sweep * t) * np.exp(-14 * t / max(0.01, duration))
         return sound
     elif drum_type == "snare":
-        noise = np.random.uniform(-0.6, 0.6, len(t)) * np.exp(-18 * t / max(duration, 1e-5))
-        body = 0.4 * np.sin(2 * np.pi * 180 * t) * np.exp(-20 * t / max(duration, 1e-5))
+        noise = np.random.uniform(-0.6, 0.6, len(t)) * np.exp(-18 * t / max(0.01, duration))
+        body = 0.4 * np.sin(2 * np.pi * 180 * t) * np.exp(-20 * t / max(0.01, duration))
         return noise + body
     elif drum_type == "hihat":
-        noise = np.random.uniform(-0.3, 0.3, len(t)) * np.exp(-45 * t / max(duration, 1e-5))
+        noise = np.random.uniform(-0.3, 0.3, len(t)) * np.exp(-45 * t / max(0.01, duration))
         return noise
     elif drum_type == "rimshot":
-        sound = 0.5 * np.sin(2 * np.pi * 400 * t) * np.exp(-30 * t / max(duration, 1e-5))
+        sound = 0.5 * np.sin(2 * np.pi * 400 * t) * np.exp(-30 * t / max(0.01, duration))
         return sound
     return np.zeros_like(t)
 
-# --- 안심 오디오 슬라이스 더하기 헬퍼 함수 ---
-def add_sound_slice(target_array, start_idx, end_idx, sound_wave):
-    slice_len = end_idx - start_idx
-    if slice_len <= 0 or len(sound_wave) == 0:
+# --- 안전 슬라이스 도우미 함수 ---
+def add_sound_slice(target_array, sound_slice, start_idx):
+    if len(sound_slice) == 0:
         return
-    if len(sound_wave) >= slice_len:
-        target_array[start_idx:end_idx] += sound_wave[:slice_len]
-    else:
-        target_array[start_idx:start_idx + len(sound_wave)] += sound_wave
+    end_idx = min(len(target_array), start_idx + len(sound_slice))
+    valid_len = end_idx - start_idx
+    if valid_len > 0:
+        target_array[start_idx:end_idx] += sound_slice[:valid_len]
 
-# --- 화성학 코드 및 베이스 자동 편곡 생성 엔진 ---
-def generate_auto_arrangement(melody_notes, style, main_inst, bpm, sample_rate, mix_vols):
+# --- 화성학 코드 및 앙상블 합주 자동 편곡 생성 엔진 ---
+def generate_auto_arrangement(melody_notes, style, main_inst, enable_harmony_ensemble, bpm, sample_rate, mix_vols):
     beat_dur = 60.0 / bpm
     
-    # 1. 메인 멜로디 트랙 생성
+    # 1. 멜로디의 으뜸음(Root Key) 자동 감지 및 화성 이조(Transposition)
+    first_note = melody_notes[0][0] if melody_notes else "C4"
+    root_note = first_note[:-1] # "C", "G", "E" 등
+    
+    # Root Key 음계 인덱스 계산 (C=0, C#=1, D=2, ..., B=11)
+    root_idx = SCALE_NOTES.index(root_note) if root_note in SCALE_NOTES else 0
+    semi_shift = root_idx # C 기준으로 몇 반음 차이나는지
+    
+    # 2. 메인 멜로디 트랙 생성 (옵션: 2성부/3성부 앙상블 화음 덧붙이기)
     melody_audio_list = []
-    total_time = 0
+    
+    # 세컨드 앙상블 보조 악기 선정 (주 악기와 어울리는 듀엣 악기)
+    second_inst = "🎻 바이올린 / 현악기" if "피아노" in main_inst else ("🎷 감성 플루트 / 목관" if "바이올린" in main_inst else "🎹 그랜드 피아노")
+    
     for note, dur_multiplier in melody_notes:
         dur = dur_multiplier * beat_dur
         freq = NOTE_FREQS.get(note, 261.63)
-        audio = synthesize_instrument(freq, dur, sample_rate, main_inst)
-        melody_audio_list.append(audio)
-        total_time += dur
+        
+        # 주 멜로디 연주
+        m_sound = synthesize_instrument(freq, dur, sample_rate, main_inst)
+        
+        # [앙상블 모드] 3도 위 화음 + 보조 악기 합주 레이어링!
+        if enable_harmony_ensemble:
+            harmony_freq_3rd = get_transposed_freq(freq, 4) # 3도(4반음) 위 화음
+            harmony_sound = 0.4 * synthesize_instrument(harmony_freq_3rd, dur, sample_rate, second_inst)
+            m_sound = m_sound + harmony_sound
+            
+        melody_audio_list.append(m_sound)
         
     melody_track = np.concatenate(melody_audio_list) if melody_audio_list else np.zeros(sample_rate)
     total_samples = len(melody_track)
     
-    # 2. 코드 진행 화성 분석 (C Major / A Minor 스케일 기반 4코드 로직)
-    # C - G - Am - F (가장 대중적인 명곡 화성 진행)
-    chord_progression = [
+    # 3. 멜로디 조성에 맞춰 자동 이조된 4코드 진행 (I - V - vi - IV 명곡 화성)
+    # C Major 기본 화성을 root_idx 만큼 반음 이동
+    c_base_chords = [
         [261.63, 329.63, 392.00], # C Major (C4, E4, G4)
         [196.00, 246.94, 293.66], # G Major (G3, B3, D4)
         [220.00, 261.63, 329.63], # A Minor (A3, C4, E4)
         [174.61, 220.00, 261.63]  # F Major (F3, A3, C4)
     ]
-    bass_progression = [130.81, 98.00, 110.00, 87.31] # C2, G2, A2, F2
+    c_base_bass = [130.81, 98.00, 110.00, 87.31] # C2, G2, A2, F2
+    
+    # 이조된 코드 및 베이스 주파수 세트
+    chord_progression = [[get_transposed_freq(f, semi_shift) for f in chord] for chord in c_base_chords]
+    bass_progression = [get_transposed_freq(f, semi_shift) for f in c_base_bass]
     
     chord_track = np.zeros(total_samples)
     bass_track = np.zeros(total_samples)
     drum_track = np.zeros(total_samples)
     
+    # 4. 주 악기에 어울리는 코드 및 베이스 세션 악기 맞춤 할당
+    if "바이올린" in main_inst or "오케스트라" in style:
+        chord_inst_type = "🎻 바이올린 / 현악기"
+        bass_inst_type = "🎻 바이올린 / 현악기" # 첼로/더블베이스 톤
+    elif "기타" in main_inst or "록" in style:
+        chord_inst_type = "🎸 어쿠스틱 기타"
+        bass_inst_type = "🩵 80s 레트로 신디사이저"
+    elif "신디사이저" in main_inst or "댄스" in style:
+        chord_inst_type = "🩵 80s 레트로 신디사이저"
+        bass_inst_type = "🩵 80s 레트로 신디사이저"
+    else: # 피아노, 플루트 등
+        chord_inst_type = "🎹 그랜드 피아노"
+        bass_inst_type = "🎹 그랜드 피아노"
+        
     # 마디(Bar) 단위 분할 (1마디 = 4박)
     bar_dur = 4 * beat_dur
     bar_samples = int(sample_rate * bar_dur)
@@ -227,7 +258,6 @@ def generate_auto_arrangement(melody_notes, style, main_inst, bpm, sample_rate, 
         chord_freqs = chord_progression[b % len(chord_progression)]
         bass_freq = bass_progression[b % len(bass_progression)]
         
-        # --- 스타일별 코드 아르페지오 및 드럼 패턴 ---
         chord_bar = np.zeros(curr_len)
         bass_bar = np.zeros(curr_len)
         drum_bar = np.zeros(curr_len)
@@ -236,70 +266,68 @@ def generate_auto_arrangement(melody_notes, style, main_inst, bpm, sample_rate, 
         sub_len = max(1, bar_samples // 16)
         for slot in range(16):
             s_idx = slot * sub_len
+            if s_idx >= curr_len:
+                break
             e_idx = min(curr_len, (slot + 1) * sub_len)
             s_dur = (e_idx - s_idx) / sample_rate
-            if s_idx >= curr_len or s_dur <= 0:
+            if s_dur <= 0:
                 continue
                 
-            # 스타일별 코드 연주
-            if "댄스" in style or "City Pop" in style:
-                # 8분음표/16분음표 바운스 패턴
+            # A) 코드 반주 리듬 연주
+            if "댄스" in style:
                 if slot in [0, 3, 6, 8, 10, 12, 14]:
                     cf = chord_freqs[slot % len(chord_freqs)]
-                    sound = 0.3 * synthesize_instrument(cf, s_dur, sample_rate, "🎹 그랜드 피아노")
-                    add_sound_slice(chord_bar, s_idx, e_idx, sound)
+                    c_snd = 0.35 * synthesize_instrument(cf, s_dur * 1.5, sample_rate, chord_inst_type)
+                    add_sound_slice(chord_bar, c_snd, s_idx)
             elif "발라드" in style or "오케스트라" in style:
-                # 서정적인 8분음표 아르페지오
                 if slot % 2 == 0:
                     cf = chord_freqs[(slot // 2) % len(chord_freqs)]
-                    inst = "🎻 바이올린 / 현악기" if "오케스트라" in style else "🎹 그랜드 피아노"
-                    sound = 0.35 * synthesize_instrument(cf, s_dur, sample_rate, inst)
-                    add_sound_slice(chord_bar, s_idx, e_idx, sound)
+                    c_snd = 0.4 * synthesize_instrument(cf, s_dur * 2.5, sample_rate, chord_inst_type)
+                    add_sound_slice(chord_bar, c_snd, s_idx)
             else: # 록 밴드
                 if slot % 4 == 0:
                     for cf in chord_freqs:
-                        sound = 0.2 * synthesize_instrument(cf, s_dur, sample_rate, "🎸 어쿠스틱 기타")
-                        add_sound_slice(chord_bar, s_idx, e_idx, sound)
+                        c_snd = 0.22 * synthesize_instrument(cf, s_dur * 3.5, sample_rate, chord_inst_type)
+                        add_sound_slice(chord_bar, c_snd, s_idx)
                         
-            # B) 베이스 트랙
+            # B) 베이스 트랙 연주
             if slot in [0, 8] or ("댄스" in style and slot in [0, 6, 10]):
-                sound = 0.5 * synthesize_instrument(bass_freq, s_dur, sample_rate, "🩵 80s 레트로 신디사이저")
-                add_sound_slice(bass_bar, s_idx, e_idx, sound)
+                b_snd = 0.55 * synthesize_instrument(bass_freq, s_dur * 2.5, sample_rate, bass_inst_type)
+                add_sound_slice(bass_bar, b_snd, s_idx)
                 
             # C) 드럼 비트 패턴
             if "댄스" in style:
-                # 4-on-the-floor (0, 4, 8, 12에 킥)
                 if slot % 4 == 0:
-                    add_sound_slice(drum_bar, s_idx, e_idx, synthesize_drum("kick", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, synthesize_drum("kick", s_dur, sample_rate), s_idx)
                 if slot in [4, 12]:
-                    add_sound_slice(drum_bar, s_idx, e_idx, synthesize_drum("snare", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, synthesize_drum("snare", s_dur, sample_rate), s_idx)
                 if slot % 2 == 1:
-                    add_sound_slice(drum_bar, s_idx, e_idx, synthesize_drum("hihat", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, synthesize_drum("hihat", s_dur, sample_rate), s_idx)
             elif "발라드" in style:
                 if slot == 0:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.7 * synthesize_drum("kick", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.7 * synthesize_drum("kick", s_dur, sample_rate), s_idx)
                 if slot == 8:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.6 * synthesize_drum("rimshot", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.6 * synthesize_drum("rimshot", s_dur, sample_rate), s_idx)
                 if slot % 4 == 2:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.3 * synthesize_drum("hihat", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.3 * synthesize_drum("hihat", s_dur, sample_rate), s_idx)
             elif "록" in style:
                 if slot in [0, 8, 10]:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.8 * synthesize_drum("kick", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.8 * synthesize_drum("kick", s_dur, sample_rate), s_idx)
                 if slot in [4, 12]:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.8 * synthesize_drum("snare", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.8 * synthesize_drum("snare", s_dur, sample_rate), s_idx)
                 if slot % 2 == 0:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.4 * synthesize_drum("hihat", s_dur, sample_rate))
-            else: # 오케스트라 / 기타
+                    add_sound_slice(drum_bar, 0.4 * synthesize_drum("hihat", s_dur, sample_rate), s_idx)
+            else: # 오케스트라
                 if slot == 0:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.6 * synthesize_drum("kick", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.6 * synthesize_drum("kick", s_dur, sample_rate), s_idx)
                 if slot == 8:
-                    add_sound_slice(drum_bar, s_idx, e_idx, 0.5 * synthesize_drum("rimshot", s_dur, sample_rate))
+                    add_sound_slice(drum_bar, 0.5 * synthesize_drum("rimshot", s_dur, sample_rate), s_idx)
 
-        chord_track[start_s:end_s] = chord_bar
-        bass_track[start_s:end_s] = bass_bar
-        drum_track[start_s:end_s] = drum_bar
+        add_sound_slice(chord_track, chord_bar, start_s)
+        add_sound_slice(bass_track, bass_bar, start_s)
+        add_sound_slice(drum_track, drum_bar, start_s)
         
-    # 볼륨 믹싱 적용
+    # 5. 트랙별 볼륨 믹싱 적용
     v_mel, v_cho, v_bas, v_dru = mix_vols
     mix_melody = melody_track * v_mel
     mix_chord = chord_track * v_cho
@@ -322,9 +350,9 @@ if "melody_notes" not in st.session_state:
 # --- 헤더 UI ---
 st.markdown("""
 <div class="header-card">
-    <h1 style="margin:0; font-size: 2.1rem;">🎼 AI 멀티 악기 자동 편곡 작곡 스튜디오</h1>
+    <h1 style="margin:0; font-size: 2.1rem;">🎼 AI 멀티 악기 자동 합주 & 편곡 스튜디오</h1>
     <p style="margin-top: 8px; opacity: 0.9; font-size: 1.02rem;">
-        몇 개의 멜로디 음표만 찍어보세요! AI가 <b>다양한 악기 음색</b>과 <b>화성학 코드 진행, 베이스, 드럼 풀밴드</b>로 멋지게 완성해 드립니다.
+        찍어주신 멜로디에 맞춰 <b>자동 3도 화음 앙상블 합주</b>와 <b>멜로디 조성(Key) 자동 이조 반주</b>가 완벽하게 어우러집니다!
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -336,7 +364,7 @@ with col_left:
     st.markdown("### 🎹 1. 멜로디 음표 찍기")
     
     # 템플릿 샘플 선택
-    st.caption("✨ 빠른 체험을 위한 대표 멜로디 샘플:")
+    st.caption("✨ 빠른 합주 체험을 위한 대표 멜로디 샘플:")
     selected_sample = st.selectbox("샘플 멜로디 불러오기:", ["직접 작성하기"] + list(SAMPLE_MELODIES.keys()))
     if selected_sample != "직접 작성하기":
         if st.button("📥 선택한 샘플 멜로디 적용하기"):
@@ -394,15 +422,22 @@ with col_left:
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col_right:
-    st.markdown("### 🎛️ 2. 악기 & 편곡 스타일 세팅")
+    st.markdown("### 🎛️ 2. 악기 & 앙상블 합주 세팅")
     
     main_inst = st.selectbox(
-        "🎸 메인 멜로디 악기 음색 선택:",
+        "🎸 메인 멜로디 악기 선택:",
         ["🎹 그랜드 피아노", "🎸 어쿠스틱 기타", "🎻 바이올린 / 현악기", "🩵 80s 레트로 신디사이저", "🎷 감성 플루트 / 목관"]
     )
     
+    # ★ 핵심 신기능: 2성부/3성부 앙상블 합주 모드 스위치
+    enable_harmony_ensemble = st.toggle(
+        "🎻 2성부/3성부 앙상블 화음 레이어링 (자동 합주)",
+        value=True,
+        help="켜면 멜로디에 어울리는 보조 악기(바이올린/플루트 등)가 3도 화음을 동시에 연주하여 웅장한 합주 효과를 만들어냅니다!"
+    )
+    
     band_style = st.selectbox(
-        "🎵 AI 자동 편곡 스타일:",
+        "🎵 AI 자동 편곡 장르 스타일:",
         ["🕺 K-POP / 신나는 팝 댄스", "☕ 감성적인 로파이 발라드", "🎸 파워풀 록 밴드", "🎻 웅장한 오케스트라"]
     )
     
@@ -412,7 +447,7 @@ with col_right:
     st.markdown("### 🎚️ 3. 트랙별 볼륨 믹서")
     col_v1, col_v2 = st.columns(2)
     with col_v1:
-        v_mel = st.slider("🎷 메인 멜로디 볼륨", 0.0, 1.2, 0.9, 0.1)
+        v_mel = st.slider("🎷 메인 멜로디/합주 볼륨", 0.0, 1.2, 0.9, 0.1)
         v_cho = st.slider("🎹 화성 코드 볼륨", 0.0, 1.2, 0.7, 0.1)
     with col_v2:
         v_bas = st.slider("🎸 베이스 라인 볼륨", 0.0, 1.2, 0.8, 0.1)
@@ -420,18 +455,18 @@ with col_right:
 
 # --- 자동 편곡 음원 생성 버튼 및 오디오 플레이어 ---
 st.markdown("---")
-st.subheader("🎧 풀버전 자동 편곡 음원 완성하기")
+st.subheader("🎧 풀버전 자동 편곡 앙상블 완성하기")
 
-if st.button("🚀 AI 풀밴드 편곡 연주 시작하기!", type="primary", use_container_width=True):
+if st.button("🚀 AI 풀밴드 앙상블 합주 시작하기!", type="primary", use_container_width=True):
     if len(st.session_state.melody_notes) == 0:
         st.warning("⚠️ 먼저 피아노 건반을 눌러 최소 1개 이상의 음표를 추가해 주세요!")
     else:
-        with st.spinner("🎵 AI가 찍어주신 멜로디의 화성을 분석하여 풀밴드로 편곡 중입니다..."):
+        with st.spinner("🎵 AI가 멜로디의 조성을 분석하여 3도 화음 합주와 맞춤형 화성 세션을 조율 중입니다..."):
             sample_rate = 44100
             mix_vols = (v_mel, v_cho, v_bas, v_dru)
             
             full_audio, track_mel, track_cho, track_bas, track_dru = generate_auto_arrangement(
-                st.session_state.melody_notes, band_style, main_inst, bpm, sample_rate, mix_vols
+                st.session_state.melody_notes, band_style, main_inst, enable_harmony_ensemble, bpm, sample_rate, mix_vols
             )
             
             # WAV 변환 함수
@@ -443,16 +478,16 @@ if st.button("🚀 AI 풀밴드 편곡 연주 시작하기!", type="primary", us
                 
             full_wav_bytes = to_wav_bytes(full_audio)
             
-            st.success(f"🎉 **[{main_inst}]**와 **[{band_style}]** 스타일의 완성도 높은 편곡 음원이 생성되었습니다!")
+            st.success(f"🎉 **[{main_inst}]**와 **[{band_style}]** 스타일에 맞춘 화려한 앙상블 합주곡이 완성되었습니다!")
             
             # 메인 풀버전 플레이어
-            st.markdown("#### 🌟 마스터링 풀버전 음원 들어보기")
+            st.markdown("#### 🌟 마스터링 풀버전 앙상블 들어보기")
             st.audio(full_wav_bytes, format="audio/wav")
             
             st.download_button(
                 label="💾 마스터링 음원 다운로드 (.wav)",
                 data=full_wav_bytes,
-                file_name="ai_arranged_full_music.wav",
+                file_name="ai_ensemble_music.wav",
                 mime="audio/wav"
             )
             
@@ -460,12 +495,12 @@ if st.button("🚀 AI 풀밴드 편곡 연주 시작하기!", type="primary", us
             with st.expander("🔍 트랙별 개별 음원 들어보기 (멀티 스템)"):
                 t_col1, t_col2 = st.columns(2)
                 with t_col1:
-                    st.caption("1️⃣ 메인 멜로디 트랙")
+                    st.caption("1️⃣ 메인 멜로디 & 3도 화음 앙상블 트랙")
                     st.audio(to_wav_bytes(track_mel), format="audio/wav")
-                    st.caption("2️⃣ 화성 코드 반주 트랙")
+                    st.caption("2️⃣ 조성 맞춤형 화성 코드 트랙")
                     st.audio(to_wav_bytes(track_cho), format="audio/wav")
                 with t_col2:
-                    st.caption("3️⃣ 베이스 라인 트랙")
+                    st.caption("3️⃣ 세션 베이스 라인 트랙")
                     st.audio(to_wav_bytes(track_bas), format="audio/wav")
-                    st.caption("4️⃣ 드럼 & 퍼커션 비트 트랙")
+                    st.caption("4️⃣ 리듬 드럼 & 퍼커션 비트 트랙")
                     st.audio(to_wav_bytes(track_dru), format="audio/wav")
