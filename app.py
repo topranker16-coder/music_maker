@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- CSS 스타일 (화면 가시성 강화) ---
+# --- CSS 스타일 ---
 st.markdown("""
 <style>
     .main .block-container {
@@ -184,4 +184,118 @@ def generate_guitar_band_song(progression_name, strum_type, total_bars, bpm, sam
         slot_16_samples = bar_samples // 16
         for slot in range(16):
             sl_s = b_start + slot * slot_16_samples
-            sl_e = min(total_samples, sl_s + slot_1
+            sl_e = min(total_samples, sl_s + slot_16_samples)
+            sl_dur = (sl_e - sl_s) / sample_rate
+            if sl_dur <= 0 or sl_s >= total_samples:
+                continue
+
+            if slot % 4 == 0:
+                dk = synthesize_drum_hit("kick", sl_dur, sample_rate)
+                dk_len = min(len(dk), sl_e - sl_s)
+                if dk_len > 0:
+                    drum_track[sl_s:sl_s + dk_len] += dk[:dk_len]
+            if slot in [4, 12]:
+                ds = synthesize_drum_hit("snare", sl_dur, sample_rate)
+                ds_len = min(len(ds), sl_e - sl_s)
+                if ds_len > 0:
+                    drum_track[sl_s:sl_s + ds_len] += ds[:ds_len]
+            if slot % 2 == 1 or slot % 2 == 0:
+                dh = synthesize_drum_hit("hihat", sl_dur, sample_rate)
+                dh_len = min(len(dh), sl_e - sl_s)
+                if dh_len > 0:
+                    drum_track[sl_s:sl_s + dh_len] += dh[:dh_len]
+
+    full_audio = (0.75 * guitar_track + 
+                  0.45 * piano_pad_track + 
+                  0.65 * bass_track + 
+                  0.65 * drum_track)
+                  
+    max_val = np.max(np.abs(full_audio))
+    if max_val > 0:
+        full_audio = (full_audio / max_val) * 0.95
+
+    return full_audio, total_duration
+
+# --- UI 레이아웃 ---
+st.markdown("""
+<div class="header-card">
+    <h1 style="margin:0; font-size: 1.8rem; color: white;">🎸 기타 코드 반주 AI 작곡 스튜디오</h1>
+    <p style="margin-top: 6px; color: #e2e8f0; font-size: 0.95rem;">
+        세련된 가요풍 기타 코드 진행과 리듬 스트럼으로 꽉 찬 반주곡을 즉시 완성합니다!
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("🎛️ 1. 코드 진행 및 스타일 설정")
+    
+    progression_choice = st.selectbox(
+        "🎼 가요풍 코드 진행 선택:",
+        [
+            "I - V - VIm - IV (발라드 국민 진행: C - G - Am - F)",
+            "VIm - IV - I - V (감성 팝 진행: Am - F - C - G)",
+            "I - VIm - IV - V (두왑 / 팝 발라드: C - Am - F - G)",
+            "R&B / 인디 감성 진행 (Am7 - Fmaj7 - G7 - C)"
+        ]
+    )
+
+    strum_type = st.selectbox(
+        "🎸 기타 주법 (스트럼 스타일):",
+        ["어쿠스틱 스트럼 (청량한 리듬 긁기)", "핑거스타일 아르페지오 (부드러운 분산 화음)"]
+    )
+
+    total_bars = st.select_slider(
+        "📏 곡 전체 길이 (마디 수):",
+        options=[4, 8, 12, 16],
+        value=8,
+        format_func=lambda x: f"{x}마디 (약 {int(x * 2.0)}초 연주)"
+    )
+    
+    bpm = st.slider("⏱️ 템포 (BPM):", min_value=70, max_value=130, value=100)
+
+with col2:
+    st.subheader("🪄 2. 반주 곡 생성하기")
+    st.info("💡 버튼을 누르면 기타 스트럼과 밴드 세션이 믹싱됩니다.")
+
+    if "C - G - Am - F" in progression_choice:
+        preview_chords = ["C", "G", "Am", "F"]
+    elif "Am - F - C - G" in progression_choice:
+        preview_chords = ["Am", "F", "C", "G"]
+    elif "C - Am - F - G" in progression_choice:
+        preview_chords = ["C", "Am", "F", "G"]
+    else:
+        preview_chords = ["Am7", "Fmaj7", "G7", "C"]
+
+    st.markdown('<div class="status-card">', unsafe_allow_html=True)
+    st.markdown("**📌 적용되는 4코드 순환 루프:**")
+    badges = []
+    for i in range(total_bars):
+        c_name = preview_chords[i % len(preview_chords)]
+        badges.append(f'<span class="chord-badge">{i+1}마디: {c_name}</span>')
+    st.markdown(" ".join(badges), unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🚀 기타 반주 밴드 곡 연주하기!", type="primary", use_container_width=True):
+        with st.spinner("🎸 기타 스트럼 주법과 밴드 세션을 연주 중입니다..."):
+            sample_rate = 44100
+            generated_audio, act_dur = generate_guitar_band_song(
+                progression_choice, strum_type, total_bars, bpm, sample_rate
+            )
+
+            audio_int16 = (generated_audio * 32767).astype(np.int16)
+            buf = io.BytesIO()
+            wavfile.write(buf, sample_rate, audio_int16)
+            wav_bytes = buf.getvalue()
+
+            st.success(f"🎉 **약 {int(act_dur)}초 분량 ({total_bars}마디)**의 기타 반주 곡이 완성되었습니다!")
+            st.audio(wav_bytes, format="audio/wav")
+
+            st.download_button(
+                label="💾 기타 반주 음원 다운로드 (.wav)",
+                data=wav_bytes,
+                file_name=f"guitar_band_song_{total_bars}bars.wav",
+                mime="audio/wav"
+            )
