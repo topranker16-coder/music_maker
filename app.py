@@ -2,80 +2,113 @@ import io
 import numpy as np
 from scipy.io import wavfile
 import streamlit as st
+from streamlit_drawable_canvas import st_canvas
 
-st.set_page_config(page_title="곡선형 자동 작곡 프로토타입 🎵", layout="centered")
+st.set_page_config(
+    page_title="곡선형 자동 작곡 프로토타입 🎵", layout="centered"
+)
 
-st.title("✍️ 곡선으로 그리는 나만의 BGM 메이커")
-st.markdown("아래 캔버스에 마우스로 선을 그려보세요. 선의 높낮이가 멜로디와 사운드로 변환됩니다!")
+st.title("✍️ 내 마음대로 그리는 곡선 BGM 메이커")
+st.markdown(
+    "아래 파란 캔버스에 마우스나 손가락으로 **왼쪽에서 오른쪽으로** 자유롭게 선을"
+    " 그려보세요!"
+)
+st.markdown(
+    "💡 **위쪽에 그리면 높은 음**, **아래쪽에 그리면 낮은 음**이 소리 납니다."
+)
 
-# 1. HTML5 기반 인터랙티브 드로잉 캔버스
-canvas_html = """
-<div style="text-align: center;">
-    <canvas id="drawCanvas" width="600" height="250" style="border:2px solid #4A90E2; border-radius: 12px; background-color: #fafafa; cursor: crosshair;"></canvas>
-    <div style="margin-top: 15px;">
-        <button onclick="clearCanvas()" style="padding: 8px 16px; background-color: #ff4b4b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">지우기 (초기화)</button>
-    </div>
-</div>
-
-<script>
-    const canvas = document.getElementById('drawCanvas');
-    const ctx = canvas.getContext('2d');
-    let isDrawing = false;
-
-    canvas.addEventListener('mousedown', (e) => {
-        isDrawing = true;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        const rect = canvas.getBoundingClientRect();
-        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-        if (!isDrawing) return;
-        const rect = canvas.getBoundingClientRect();
-        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-        ctx.stroke();
-    });
-
-    canvas.addEventListener('mouseup', () => { isDrawing = false; });
-
-    function clearCanvas() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-</script>
-"""
-
-st.components.v1.html(canvas_html, height=330)
+# 1. 스트림릿 전용 드로잉 캔버스 생성 (좌표 데이터를 파이썬이 읽을 수 있는 캔버스)
+canvas_result = st_canvas(
+    fill_color="rgba(255, 165, 0, 0.3)",
+    stroke_width=4,
+    stroke_color="#1E88E5",  # 선 색상: 파란색
+    background_color="#F0F2F6",  # 배경색: 밝은 회색
+    height=250,
+    width=600,
+    drawing_mode="freedraw",
+    key="canvas",
+)
 
 st.markdown("---")
-st.subheader("🎧 생성된 오디오 미리보기 및 다운로드")
+st.subheader("🎧 내가 그린 곡선으로 오디오 만들기")
 
-if st.button("✨ 멜로디 사운드 즉시 렌더링하기"):
-    sample_rate = 44100
-    duration_per_note = 0.2 
-    pentatonic_freqs = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]
-    
-    audio_buffer = []
-    np.random.seed(42)
-    
-    for _ in range(30):
-        freq = np.random.choice(pentatonic_freqs)
-        t = np.linspace(0, duration_per_note, int(sample_rate * duration_per_note), endpoint=False)
-        note = 0.3 * np.sin(2 * np.pi * freq * t) * (1 - t / duration_per_note)
-        audio_buffer.append(note)
-        
-    full_audio = np.concatenate(audio_buffer)
-    audio_data = (full_audio * 32767).astype(np.int16)
-    
-    wav_io = io.BytesIO()
-    wavfile.write(wav_io, sample_rate, audio_data)
-    wav_bytes = wav_io.getvalue()
-    
-    st.audio(wav_bytes, format='audio/wav')
-    st.download_button(
-        label="💾 이 오디오 파일 다운로드하기 (.wav)",
-        data=wav_bytes,
-        file_name="my_custom_bgm.wav",
-        mime="audio/wav"
-    )
-    st.success("🎉 멋집니다! 첫 번째 사운드 파일이 완성되었습니다.")
+# 2. 그린 선의 좌표 데이터를 오디오 소리로 변환하는 엔진
+if st.button("🎵 이 곡선으로 음악 렌더링하기!"):
+  if (
+      canvas_result.json_data is not None
+      and len(canvas_result.json_data["objects"]) > 0
+  ):
+    # 그린 선의 모든 점 좌표(X, Y) 가져오기
+    path_data = canvas_result.json_data["objects"][0]["path"]
+
+    # Y 좌표(높낮이) 모으기
+    # 캔버스 특성상 맨 위가 Y=0, 맨 아래가 Y=250 입니다.
+    y_points = [point[2] for point in path_data if len(point) >= 3]
+
+    if len(y_points) > 0:
+      # 편안하고 신나는 펜타토닉 음계 (낮은 음부터 높은 음까지 2옥타브 배열)
+      # [도, 레, 미, 솔, 라, 도, 레, 미, 솔, 라, 높은도]
+      scale = [
+          130.81,
+          146.83,
+          164.81,
+          196.00,
+          220.00,  # 3옥타브
+          261.63,
+          293.66,
+          329.63,
+          392.00,
+          440.00,  # 4옥타브
+          523.25,
+          587.33,
+          659.25,
+          783.99,
+          880.00,  # 5옥타브
+      ]
+
+      sample_rate = 44100
+      note_duration = 0.15  # 한 음당 길이 (0.15초)
+      audio_segments = []
+
+      # 너무 많은 점이 있으면 듬성듬성 샘플링하여 음악 박자로 변환 (최대 40개 음표)
+      step = max(1, len(y_points) // 40)
+      sampled_y = y_points[::step]
+
+      for y in sampled_y:
+        # Y좌표(0~250)를 음계 범위로 변환 (위로 갈수록 높은 음계 index 지정)
+        # 캔버스는 위쪽 Y가 0이므로, (250 - y)로 뒤집어서 높낮이를 정해줍니다.
+        normalized_y = max(0, min(250, 250 - y))
+        scale_index = int((normalized_y / 250) * (len(scale) - 1))
+        freq = scale[scale_index]
+
+        # 음생성 (사인파 오디오 연산 + 부드러운 페이드아웃 효과)
+        t = np.linspace(
+            0, note_duration, int(sample_rate * note_duration), endpoint=False
+        )
+        # 소리가 뚝뚝 끊기지 않도록 엔벨롭(잔향) 추가
+        envelope = np.exp(-3 * t / note_duration)
+        note = 0.4 * np.sin(2 * np.pi * freq * t) * envelope
+        audio_segments.append(note)
+
+      # 하나로 이어붙여 전체 오디오 곡으로 완성
+      full_audio = np.concatenate(audio_segments)
+      audio_data = (full_audio * 32767).astype(np.int16)
+
+      # 스트림릿에서 바로 재생 가능하도록 WAV 파일 빌드
+      wav_io = io.BytesIO()
+      wavfile.write(wav_io, sample_rate, audio_data)
+      wav_bytes = wav_io.getvalue()
+
+      # 플레이어 화면 및 다운로드 버튼 제공
+      st.audio(wav_bytes, format="audio/wav")
+      st.download_button(
+          label="💾 오디오 파일 다운로드 (.wav)",
+          data=wav_bytes,
+          file_name="my_drawn_music.wav",
+          mime="audio/wav",
+      )
+      st.success("✨ 세상에 하나뿐인 내가 그린 곡선 멜로디가 완성되었습니다!")
+    else:
+      st.warning("⚠️ 캔버스에 선을 조금 더 길게 그려보세요!")
+  else:
+    st.warning("⚠️ 먼저 위 파란 캔버스 영역에 선을 그려주세요!")
