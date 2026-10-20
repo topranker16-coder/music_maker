@@ -93,7 +93,10 @@ SAMPLE_MELODIES = {
 
 # --- 음원 합성 함수 (고품질 악기별 ADSR & 배음) ---
 def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
-    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    num_samples = int(sample_rate * duration)
+    if num_samples <= 0:
+        return np.array([])
+    t = np.linspace(0, duration, num_samples, endpoint=False)
     if freq <= 0:
         return np.zeros_like(t)
     
@@ -102,15 +105,15 @@ def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
                  0.25 * np.sin(2 * np.pi * freq * 2 * t) +
                  0.12 * np.sin(2 * np.pi * freq * 3 * t) +
                  0.08 * np.sin(2 * np.pi * freq * 4 * t))
-        envelope = np.exp(-3.2 * t / duration)
+        envelope = np.exp(-3.2 * t / max(duration, 1e-5))
         return sound * envelope
 
     elif inst_type == "🎸 어쿠스틱 기타":
         sound = (0.5 * np.sin(2 * np.pi * freq * t) +
                  0.3 * np.sin(2 * np.pi * freq * 2 * t) +
                  0.15 * np.sin(2 * np.pi * freq * 3 * t))
-        envelope = np.exp(-4.5 * t / duration)
-        pluck = np.random.uniform(-0.15, 0.15, len(t)) * np.exp(-35.0 * t / duration)
+        envelope = np.exp(-4.5 * t / max(duration, 1e-5))
+        pluck = np.random.uniform(-0.15, 0.15, len(t)) * np.exp(-35.0 * t / max(duration, 1e-5))
         return (sound + pluck) * envelope
 
     elif inst_type == "🎻 바이올린 / 현악기":
@@ -122,14 +125,14 @@ def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
         attack = np.ones_like(t)
         if attack_len > 0:
             attack[:attack_len] = np.linspace(0, 1, attack_len)
-        release = np.exp(-1.2 * t / duration)
+        release = np.exp(-1.2 * t / max(duration, 1e-5))
         return sound * attack * release
 
     elif inst_type == "🩵 80s 레트로 신디사이저":
         sound = np.zeros_like(t)
         for k in range(1, 7):
             sound += (0.35 / k) * np.sin(2 * np.pi * freq * k * t)
-        envelope = np.exp(-2.0 * t / duration)
+        envelope = np.exp(-2.0 * t / max(duration, 1e-5))
         return sound * envelope
 
     elif inst_type == "🎷 감성 플루트 / 목관":
@@ -140,30 +143,43 @@ def synthesize_instrument(freq, duration, sample_rate, inst_type="piano"):
         attack = np.ones_like(t)
         if attack_len > 0:
             attack[:attack_len] = np.linspace(0, 1, attack_len)
-        release = np.exp(-1.8 * t / duration)
+        release = np.exp(-1.8 * t / max(duration, 1e-5))
         return (sound + breath) * attack * release
 
     else: # 기본 피아노
-        return np.sin(2 * np.pi * freq * t) * np.exp(-3.0 * t / duration)
+        return np.sin(2 * np.pi * freq * t) * np.exp(-3.0 * t / max(duration, 1e-5))
 
 # --- 드럼 합성 엔진 (킥, 스네어, 하이햇, 림샷) ---
 def synthesize_drum(drum_type, duration, sample_rate):
-    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    num_samples = int(sample_rate * duration)
+    if num_samples <= 0:
+        return np.array([])
+    t = np.linspace(0, duration, num_samples, endpoint=False)
     if drum_type == "kick":
         freq_sweep = np.linspace(130, 35, len(t))
-        sound = 0.8 * np.sin(2 * np.pi * freq_sweep * t) * np.exp(-14 * t / duration)
+        sound = 0.8 * np.sin(2 * np.pi * freq_sweep * t) * np.exp(-14 * t / max(duration, 1e-5))
         return sound
     elif drum_type == "snare":
-        noise = np.random.uniform(-0.6, 0.6, len(t)) * np.exp(-18 * t / duration)
-        body = 0.4 * np.sin(2 * np.pi * 180 * t) * np.exp(-20 * t / duration)
+        noise = np.random.uniform(-0.6, 0.6, len(t)) * np.exp(-18 * t / max(duration, 1e-5))
+        body = 0.4 * np.sin(2 * np.pi * 180 * t) * np.exp(-20 * t / max(duration, 1e-5))
         return noise + body
     elif drum_type == "hihat":
-        noise = np.random.uniform(-0.3, 0.3, len(t)) * np.exp(-45 * t / duration)
+        noise = np.random.uniform(-0.3, 0.3, len(t)) * np.exp(-45 * t / max(duration, 1e-5))
         return noise
     elif drum_type == "rimshot":
-        sound = 0.5 * np.sin(2 * np.pi * 400 * t) * np.exp(-30 * t / duration)
+        sound = 0.5 * np.sin(2 * np.pi * 400 * t) * np.exp(-30 * t / max(duration, 1e-5))
         return sound
     return np.zeros_like(t)
+
+# --- 안심 오디오 슬라이스 더하기 헬퍼 함수 ---
+def add_sound_slice(target_array, start_idx, end_idx, sound_wave):
+    slice_len = end_idx - start_idx
+    if slice_len <= 0 or len(sound_wave) == 0:
+        return
+    if len(sound_wave) >= slice_len:
+        target_array[start_idx:end_idx] += sound_wave[:slice_len]
+    else:
+        target_array[start_idx:start_idx + len(sound_wave)] += sound_wave
 
 # --- 화성학 코드 및 베이스 자동 편곡 생성 엔진 ---
 def generate_auto_arrangement(melody_notes, style, main_inst, bpm, sample_rate, mix_vols):
@@ -212,13 +228,12 @@ def generate_auto_arrangement(melody_notes, style, main_inst, bpm, sample_rate, 
         bass_freq = bass_progression[b % len(bass_progression)]
         
         # --- 스타일별 코드 아르페지오 및 드럼 패턴 ---
-        # A) 코드 반주 트랙 (Chord / Arpeggio)
         chord_bar = np.zeros(curr_len)
         bass_bar = np.zeros(curr_len)
         drum_bar = np.zeros(curr_len)
         
         # 16분음표 단위 슬롯 (1마디 = 16슬롯)
-        sub_len = bar_samples // 16
+        sub_len = max(1, bar_samples // 16)
         for slot in range(16):
             s_idx = slot * sub_len
             e_idx = min(curr_len, (slot + 1) * sub_len)
@@ -231,50 +246,54 @@ def generate_auto_arrangement(melody_notes, style, main_inst, bpm, sample_rate, 
                 # 8분음표/16분음표 바운스 패턴
                 if slot in [0, 3, 6, 8, 10, 12, 14]:
                     cf = chord_freqs[slot % len(chord_freqs)]
-                    chord_bar[s_idx:e_idx] += 0.3 * synthesize_instrument(cf, s_dur, sample_rate, "🎹 그랜드 피아노")
+                    sound = 0.3 * synthesize_instrument(cf, s_dur, sample_rate, "🎹 그랜드 피아노")
+                    add_sound_slice(chord_bar, s_idx, e_idx, sound)
             elif "발라드" in style or "오케스트라" in style:
                 # 서정적인 8분음표 아르페지오
                 if slot % 2 == 0:
                     cf = chord_freqs[(slot // 2) % len(chord_freqs)]
                     inst = "🎻 바이올린 / 현악기" if "오케스트라" in style else "🎹 그랜드 피아노"
-                    chord_bar[s_idx:e_idx] += 0.35 * synthesize_instrument(cf, s_dur * 2, sample_rate, inst)
+                    sound = 0.35 * synthesize_instrument(cf, s_dur, sample_rate, inst)
+                    add_sound_slice(chord_bar, s_idx, e_idx, sound)
             else: # 록 밴드
                 if slot % 4 == 0:
                     for cf in chord_freqs:
-                        chord_bar[s_idx:e_idx] += 0.2 * synthesize_instrument(cf, s_dur * 3, sample_rate, "🎸 어쿠스틱 기타")
+                        sound = 0.2 * synthesize_instrument(cf, s_dur, sample_rate, "🎸 어쿠스틱 기타")
+                        add_sound_slice(chord_bar, s_idx, e_idx, sound)
                         
             # B) 베이스 트랙
             if slot in [0, 8] or ("댄스" in style and slot in [0, 6, 10]):
-                bass_bar[s_idx:e_idx] += 0.5 * synthesize_instrument(bass_freq, s_dur * 2, sample_rate, "🩵 80s 레트로 신디사이저")
+                sound = 0.5 * synthesize_instrument(bass_freq, s_dur, sample_rate, "🩵 80s 레트로 신디사이저")
+                add_sound_slice(bass_bar, s_idx, e_idx, sound)
                 
             # C) 드럼 비트 패턴
             if "댄스" in style:
                 # 4-on-the-floor (0, 4, 8, 12에 킥)
                 if slot % 4 == 0:
-                    drum_bar[s_idx:e_idx] += synthesize_drum("kick", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, synthesize_drum("kick", s_dur, sample_rate))
                 if slot in [4, 12]:
-                    drum_bar[s_idx:e_idx] += synthesize_drum("snare", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, synthesize_drum("snare", s_dur, sample_rate))
                 if slot % 2 == 1:
-                    drum_bar[s_idx:e_idx] += synthesize_drum("hihat", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, synthesize_drum("hihat", s_dur, sample_rate))
             elif "발라드" in style:
                 if slot == 0:
-                    drum_bar[s_idx:e_idx] += 0.7 * synthesize_drum("kick", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.7 * synthesize_drum("kick", s_dur, sample_rate))
                 if slot == 8:
-                    drum_bar[s_idx:e_idx] += 0.6 * synthesize_drum("rimshot", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.6 * synthesize_drum("rimshot", s_dur, sample_rate))
                 if slot % 4 == 2:
-                    drum_bar[s_idx:e_idx] += 0.3 * synthesize_drum("hihat", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.3 * synthesize_drum("hihat", s_dur, sample_rate))
             elif "록" in style:
                 if slot in [0, 8, 10]:
-                    drum_bar[s_idx:e_idx] += 0.8 * synthesize_drum("kick", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.8 * synthesize_drum("kick", s_dur, sample_rate))
                 if slot in [4, 12]:
-                    drum_bar[s_idx:e_idx] += 0.8 * synthesize_drum("snare", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.8 * synthesize_drum("snare", s_dur, sample_rate))
                 if slot % 2 == 0:
-                    drum_bar[s_idx:e_idx] += 0.4 * synthesize_drum("hihat", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.4 * synthesize_drum("hihat", s_dur, sample_rate))
             else: # 오케스트라 / 기타
                 if slot == 0:
-                    drum_bar[s_idx:e_idx] += 0.6 * synthesize_drum("kick", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.6 * synthesize_drum("kick", s_dur, sample_rate))
                 if slot == 8:
-                    drum_bar[s_idx:e_idx] += 0.5 * synthesize_drum("rimshot", s_dur, sample_rate)
+                    add_sound_slice(drum_bar, s_idx, e_idx, 0.5 * synthesize_drum("rimshot", s_dur, sample_rate))
 
         chord_track[start_s:end_s] = chord_bar
         bass_track[start_s:end_s] = bass_bar
