@@ -58,13 +58,12 @@ if st.button("🚀 선택한 악기들로 합주 연주 시작!"):
         880.00,
         987.77,
         1046.50,
-    ]  # 높은 음역대
-    scale_guitar = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88]  # 중음역대
-    scale_bass = [65.41, 73.42, 82.41, 87.31, 98.00, 110.00]  # 낮은 음역대
+    ]
+    scale_guitar = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88]
+    scale_bass = [65.41, 73.42, 82.41, 87.31, 98.00, 110.00]
 
     track_sounds = []
 
-    # 2. 그려진 각 선의 시작 Y 좌표를 읽어 악기 분류 및 사운드 생성
     for obj in objects:
       if "path" in obj:
         path_data = obj["path"]
@@ -77,7 +76,92 @@ if st.button("🚀 선택한 악기들로 합주 연주 시작!"):
 
           single_line_wave = []
 
-          # (1) 위쪽 영역에서 시작한 선 -> 🎹 피아노 (맑고 청아한 음색)
+          # 피아노 영역
           if start_y <= 100:
             for y in sampled_y:
               t = np.linspace(
+                  0, note_duration, total_samples_per_note, endpoint=False
+              )
+              norm_y = max(0, min(100, 100 - y))
+              idx = int((norm_y / 100) * (len(scale_piano) - 1))
+              freq = scale_piano[idx]
+              wave = (
+                  0.3 * np.sin(2 * np.pi * freq * t)
+                  + 0.1 * np.sin(2 * np.pi * freq * 2 * t)
+              ) * np.exp(-4 * t / note_duration)
+              single_line_wave.append(wave)
+
+          # 기타 영역
+          elif start_y <= 200:
+            for y in sampled_y:
+              t = np.linspace(
+                  0, note_duration, total_samples_per_note, endpoint=False
+              )
+              norm_y = max(0, min(100, 200 - y))
+              idx = int((norm_y / 100) * (len(scale_guitar) - 1))
+              freq = scale_guitar[idx]
+              wave = (
+                  0.25
+                  * np.arcsin(np.sin(2 * np.pi * freq * t))
+                  * np.exp(-2.5 * t / note_duration)
+              )
+              single_line_wave.append(wave)
+
+          # 드럼 & 베이스 영역
+          else:
+            for i, y in enumerate(sampled_y):
+              t = np.linspace(
+                  0, note_duration, total_samples_per_note, endpoint=False
+              )
+              beat_type = i % 4
+              if beat_type == 0 or beat_type == 2:
+                kick_f = np.linspace(140, 35, total_samples_per_note)
+                drum = np.sin(2 * np.pi * kick_f * t) * np.exp(-8 * t)
+              else:
+                drum = (
+                    np.random.uniform(-0.4, 0.4, total_samples_per_note)
+                    * np.exp(-12 * t)
+                )
+
+              norm_y = max(0, min(100, 300 - y))
+              idx = int((norm_y / 100) * (len(scale_bass) - 1))
+              bass_freq = scale_bass[idx]
+              bass = 0.3 * np.sin(2 * np.pi * bass_freq * t) * np.exp(-2 * t)
+
+              single_line_wave.append(0.5 * drum + bass)
+
+          if len(single_line_wave) > 0:
+            track_sounds.append(np.concatenate(single_line_wave))
+
+    if len(track_sounds) > 0:
+      max_len = max(len(t) for t in track_sounds)
+      padded_tracks = [
+          np.pad(t, (0, max_len - len(t)), "constant") for t in track_sounds
+      ]
+      final_mix = np.sum(padded_tracks, axis=0)
+
+      max_val = np.max(np.abs(final_mix))
+      if max_val > 0:
+        final_mix = final_mix / max_val * 0.85
+
+      audio_data = (final_mix * 32767).astype(np.int16)
+
+      wav_io = io.BytesIO()
+      wavfile.write(wav_io, sample_rate, audio_data)
+      wav_bytes = wav_io.getvalue()
+
+      st.audio(wav_bytes, format="audio/wav")
+      st.download_button(
+          label="💾 악기별 합주 곡 다운로드 (.wav)",
+          data=wav_bytes,
+          file_name="instrument_band_drawn_music.wav",
+          mime="audio/wav",
+      )
+      st.success(
+          "🎉 대단합니다! 그려주신 악기 트랙들이 하나로 모여 완벽한 밴드 연주가"
+          " 완성되었습니다!"
+      )
+    else:
+      st.warning("⚠️ 캔버스에 선을 그려주세요!")
+  else:
+    st.warning("⚠️ 먼저 캔버스의 피아노, 기타, 드럼 구역에 선을 그려보세요!")
